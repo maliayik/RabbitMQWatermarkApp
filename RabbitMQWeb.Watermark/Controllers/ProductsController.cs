@@ -6,16 +6,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using RabbitMQWeb.Watermark.Models;
+using RabbitMQWeb.Watermark.Services;
 
 namespace RabbitMQWeb.Watermark.Controllers
 {
     public class ProductsController : Controller
     {
         private readonly AppDbContext _context;
-
-        public ProductsController(AppDbContext context)
+        private readonly RabbitMQPublisher _rabbitMQPublisher;
+        public ProductsController(AppDbContext context, RabbitMQPublisher rabbitMQPublisher)
         {
             _context = context;
+            _rabbitMQPublisher = rabbitMQPublisher;
         }
 
         // GET: Products
@@ -55,14 +57,40 @@ namespace RabbitMQWeb.Watermark.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("Id,Name,Price,Stock,PictureUrl")] Product product)
+        public async Task<IActionResult> Create([Bind("Id,Name,Price,Stock,ImageName")] Product product,IFormFile ImageFile)
         {
-            if (ModelState.IsValid)
+            if(!ModelState.IsValid)
+            { 
+                foreach (var error in ModelState.Values.SelectMany(v => v.Errors))
+                {
+                    // Hataları loglayabilir veya debug yapabilirsiniz.
+                    Console.WriteLine(error.ErrorMessage);
+                }
+            return View(product); 
+            }
+
+            if (ImageFile is { Length:> 0 })
             {
+                //random bi resim adı olusturuyoruz ve resim uzantısını alıyoruz.
+                var randomImageName = Guid.NewGuid() + Path.GetExtension(ImageFile.FileName);
+
+                //resim yolunu alıyoruz
+                var path=Path.Combine(Directory.GetCurrentDirectory(),"wwwroot/images",randomImageName);
+
+                //resmi wwwroot/images klasörüne kaydediyoruz.
+               await using FileStream stream = new(path, FileMode.Create);
+                await ImageFile.CopyToAsync(stream);
+
+                _rabbitMQPublisher.Publish(new ProductImageCreatedEvent { ImageName = randomImageName });
+
+                product.ImageName = randomImageName;
+            }
+            
+
                 _context.Add(product);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
-            }
+            
             return View(product);
         }
 
@@ -87,7 +115,7 @@ namespace RabbitMQWeb.Watermark.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("Id,Name,Price,Stock,PictureUrl")] Product product)
+        public async Task<IActionResult> Edit(int id, [Bind("Id,Name,Price,Stock,ImageName")] Product product)
         {
             if (id != product.Id)
             {
