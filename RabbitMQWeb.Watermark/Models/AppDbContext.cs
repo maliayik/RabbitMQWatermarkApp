@@ -1,0 +1,17 @@
+﻿using Microsoft.EntityFrameworkCore;
+
+namespace RabbitMQWeb.Watermark.Models
+{
+    public class AppDbContext:DbContext
+    {
+        //program.cs tarafında optionsu set edicez
+        public AppDbContext(DbContextOptions<AppDbContext>options):base(options)
+        {
+            
+        }
+
+        public DbSet<Product> Products { get; set; }
+
+
+    }
+}
